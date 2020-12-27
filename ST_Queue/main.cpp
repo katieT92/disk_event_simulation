@@ -1,0 +1,283 @@
+//
+// Created by Ali A. Kooshesh on 2020-10-21.
+//
+
+#include <iostream>
+#include <fstream>
+#include <random>
+#include <cstdlib>
+#include <unistd.h>
+#include "../CommonFiles/Request.hpp"
+#include "STQueue.hpp"
+#include <tuple>
+#include "../FCFS_Queue/FCFSQueue.hpp"
+
+
+void addTest2(STQueue *q, Request *r, int t, int s);
+std::tuple<int,int> getTest2(STQueue *q, int t, int s);
+
+STQueue *createSTQueueFromInputFile( int argc, char *argv[] ) {
+    std::cout << "ST -- Main function.\n";
+
+    if( argc != 2) {
+        std::cout << "usage: " << argv[0] << " nameOfAnInputFile\n";
+        exit(1);
+    }
+    std::ifstream inputStream;
+    inputStream.open(argv[1], std::ios::in);
+    if( ! inputStream.is_open()) {
+        std::cout << "Unable to open " << argv[1] << ". Terminating...";
+        perror("Error when attempting to open the input file.");
+        exit(1);
+    }
+    auto *queue = new STQueue();
+
+    int time, track, sector;
+    while(inputStream >> time && inputStream >> track && inputStream >> sector) {
+        auto *request = new Request(time, track, sector);
+        queue->addRequest(request, 0, 0);
+    }
+
+    return queue;
+}
+
+
+
+
+
+
+Request *generateRandomRequest() {
+    // Randomly generates and returns a request. The time of each
+    // subsequent request is larger than that of the previous one.
+
+    static int currentTime = 0;
+
+    enum {
+        MAX_TIME_INTERVAL = 100,
+        MAX_TRACK = 20,
+        MAX_SECTOR = 30
+    };
+
+    currentTime += (int) (random() % MAX_TIME_INTERVAL + 1);   // advance current time by at most 100 msecs
+    int track = (int) (random() % MAX_TRACK);
+    int sector = (int) (random() % MAX_SECTOR);
+
+    return new Request(currentTime, track, sector);
+}
+
+
+
+
+
+
+
+enum Actions {
+    ADD_A_REQUEST = 0,
+    GET_A_REQUEST = 5,
+    INSPECT_QUEUE = 9,
+};
+
+
+
+const int ACTION_RANGE = 10;
+
+
+
+
+
+
+STQueue *createSTQueueFromRandomValues(int numRequestsToGenerate, int numTestsToRun) {
+    // This function runs numTestsToRun (tests/times?) to test the ST queue. Each test consists of one
+    // of the following operations:
+    //
+    //   1. adding a random request to the queue.
+    //   2. removing (and deleting) a request from the queue.
+    //   3. determining if the queue is empty or not.
+
+    // numRequestsToGenerate provides a limit on the number of requests to be generated.
+    // You can force the queue to become empty by setting the value of numTestsToRun
+    // far greater than numRequestsToGenerate. Setting numRequestsToGenerate greater
+    // than numTestsToRun will keep many requests in the queue.
+
+    // Once all tests are run, the queue gets emptied, if it is not already empty.
+
+    // ST is a simple queue and as a result, testing whether it organizes the requests
+    // correctly or not is simple. To that end, we keep track of the timestamp of
+    // the last request that we remove from the queue. Every time that we remove
+    // a request from the queue, we expect its timestamp to be larger than that of
+    // the previous one. If that relationship doesn't hold, we print an error message.
+
+    // We use enum Action to give weight to each of the three operations that
+    // we perform to test the queue. To perform a test, we draw a random number between
+    // 0 and 9 and depending on how its value relates to the range of values that enum
+    // Action provides, we run a test accordingly.
+    //
+    // For example, currently, the value of GET_A_REQUEST of enum Action is 5. That means
+    // we will add a request to the queue, if the value that the random number that we
+    // generate is greater than or equal to ADD_A_REQUEST (which is zero) and less
+    // than GET_A_REQUEST (which is 5). Therefore, the weight of adding a request is
+    // 5/10 = 1/2 (we have 10 values in the interval of 0 and 9.) That is, 50 percent
+    // of the times we add a request to the queue. On the other hand, 40% of the times
+    // we remove a request from the queue and 10% of the times we inspect the queue to
+    // determine if it is empty or not.
+
+    // Please note that numTestsToGenerate bounds the number of requests that we
+    // generate. Therefore, we will skip generating requests if we ever reach this
+    // value.
+
+    // This is a long function, however breaking it up into more functions would require
+    // many arguments to be passed to helper functions. That is a trade off.
+
+    auto *queue = new STQueue();
+    srandom(getpid());
+
+    int numRequestsGenerated = 0, numTestsRun = 0, numRequestsInTheQueue = 0;
+    int currentTrack = 0, currentSector = 0;
+    double previousTimeStamp = 0.0;
+
+    while ( numTestsRun < numTestsToRun ) {
+        Request *request = nullptr;
+        int actionRange = (int) (random() % ACTION_RANGE);
+        if (numRequestsGenerated < numRequestsToGenerate && actionRange >= ADD_A_REQUEST && actionRange < GET_A_REQUEST) {
+            std::cout << "Testing addRequest\n";
+            request = generateRandomRequest();
+            std::cout << "Adding the following request to the STQueue.\n";
+            request->print();
+            queue->addRequest(request, currentTrack, currentSector);
+            numRequestsGenerated++;
+            numRequestsInTheQueue++;
+        } else if (actionRange < INSPECT_QUEUE) {
+            std::cout << "Testing getRequest\n";
+            if (queue->empty())
+                std::cout << "STQueue is empty.\n";
+            else {
+                request = queue->getRequest();
+                std::cout << "Removed the following request from the STQueue via getRequest.\n";
+                request->print();
+                previousTimeStamp = request->time();
+                delete request; // We do not have a use for this request any longer.
+                currentTrack = request->track();
+                currentSector = request->sector();
+                numRequestsInTheQueue--;
+            }
+        } else {
+            std::cout << "Testing whether the queue is empty or not.\n";
+            if (numRequestsInTheQueue != 0 && queue->empty()) {
+                std::cout << "STQueue::empty() returns true, but the queue should have " <<
+                          numRequestsInTheQueue << " elements in it." << std::endl;
+                exit(1);
+            } else if (numRequestsInTheQueue == 0 && !queue->empty()) {
+                std::cout << "STQueue::empty() returns false, but the queue should be empty." << std::endl;
+                exit(1);
+            }
+        }
+        numTestsRun++;
+    }
+
+    while(! queue->empty() ) {
+        std::cout << "Removed the following request from the STQueue after having tested the queue.\n";
+        auto *request = queue->getRequest();
+        request->print();
+        delete request;
+        numRequestsInTheQueue--;
+    }
+
+    if( numRequestsInTheQueue > 0 ) {
+        std::cout << "In the process of testing, the STQueue lost " << numRequestsInTheQueue <<
+            ". This means the queue contains a bug!\n";
+    } else if(numRequestsInTheQueue < 0) {
+        std::cout << "In the process of testing, the STQueue did not remove " << -numRequestsInTheQueue <<
+                  "requests as a result of getRequest having been called. This means the queue contains a bug!\n";
+    }
+    return queue;
+}
+
+
+
+
+int main(int argc, char *argv[]) {
+
+    const int randomTest = true;
+    STQueue *queue = nullptr;
+
+    if( randomTest )
+        queue = createSTQueueFromRandomValues(100, 50);
+    else
+       queue = createSTQueueFromInputFile(argc, argv);
+
+    queue->print();
+    delete queue;
+
+    
+    /*
+     BEGIN MANUAL TESTING OF FCFS QUEUE
+     */
+    
+    Request *r1 = new Request(0, 3, 1);
+    Request *r2 = new Request(1, 6, 1);
+    Request *r3 = new Request(2, 3, 1);
+    Request *r4 = new Request(3, 1, 1);
+    Request *r5 = new Request(4, 2, 1);
+    Request *r6 = new Request(5, 0, 1);
+    Request *r7 = new Request(6, 0, 1);
+    Request *r8 = new Request(7, 1, 1);
+    Request *r9 = new Request(8, 1, 1);
+    
+    
+    std::cout << "\n\n**************************************\n";
+    std::cout << "Begin manual testing of the FCFS Queue\n";
+    std::cout << "**************************************\n\n";
+
+    /* the crwheaddtrack and the crwheadsector start at track 0, sector 0*/
+    std::tuple<int,int> tup = std::make_tuple(0,0);
+    std::tuple<int,int> pair;
+
+    auto *q = new STQueue();
+    addTest2(q, r1, std::get<0>(tup), std::get<1>(tup));
+    addTest2(q, r2, std::get<0>(tup), std::get<1>(tup));
+    addTest2(q, r3, std::get<0>(tup), std::get<1>(tup));
+    addTest2(q, r4, std::get<0>(tup), std::get<1>(tup));
+    addTest2(q, r5, std::get<0>(tup), std::get<1>(tup));
+    addTest2(q, r6, std::get<0>(tup), std::get<1>(tup));
+    addTest2(q, r7, std::get<0>(tup), std::get<1>(tup));
+    pair = getTest2(q, std::get<0>(tup), std::get<1>(tup));
+    pair = getTest2(q, std::get<0>(pair), std::get<1>(pair));
+    pair = getTest2(q, std::get<0>(pair), std::get<1>(pair));
+    pair = getTest2(q, std::get<0>(pair), std::get<1>(pair));
+    addTest2(q, r6, std::get<0>(pair), std::get<1>(pair));
+    pair = getTest2(q, std::get<0>(pair), std::get<1>(pair));
+    pair = getTest2(q, std::get<0>(pair), std::get<1>(pair));
+    pair = getTest2(q, std::get<0>(pair), std::get<1>(pair));
+    pair = getTest2(q, std::get<0>(pair), std::get<1>(pair));
+
+    return 0;
+}
+
+
+
+
+
+void addTest2(STQueue *q, Request *r, int t, int s){
+    std::cout << "Adding request: ";
+    r->print();
+    q->addRequest(r, t, s);
+    std::cout << "Printing queue:\n";
+    q->print();
+    std::cout << std::endl;
+}
+
+std::tuple<int,int> getTest2(STQueue *q, int t, int s){
+    std::cout << "Getting request -> Printing queue before get:\n";
+    q->print();
+    std::cout << "Request we're getting: ";
+    Request *gotRequest = q->getRequest();
+    gotRequest->print();
+    std::cout << "Printing queue after get: \n";
+    if (q != nullptr)
+       q->print();
+    std::cout << std::endl;
+    
+    std::tuple<int,int> tuple = std::make_tuple(gotRequest->track(), gotRequest->sector());
+    return tuple;
+}
+
